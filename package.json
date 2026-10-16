@@ -1,0 +1,1 @@
+{"description":"Minimal self-contained ERC-721 NFT contract with paid minting and Hardhat tests","devDependencies":{"@nomicfoundation/hardhat-toolbox":"^5.0.0","hardhat":"^2.22.0"},"license":"MIT","name":"erc721-nft-minting","scripts":{"compile":"hardhat compile","node":"hardhat node","test":"hardhat test"},"version":"1.0.0"}
