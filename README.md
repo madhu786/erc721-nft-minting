@@ -46,6 +46,12 @@ deployment.
   demonstration exercise: it makes the approval checks, the receiver handshake
   in `safeTransferFrom`, and the ERC-165 interface IDs explicit instead of
   inherited magic.
+- **Test coverage** includes the edge cases a reviewer checks first:
+  `ownerOf` / `tokenURI` / `getApproved` reverting on unminted ids, operator
+  (`setApprovalForAll`) transfers, per-token approvals being cleared on
+  transfer, the `safeTransferFrom` receiver handshake against both an
+  accepting and a rejecting contract (`MockERC721Receiver`), and withdraw
+  being restricted to the contract owner.
 - **Known simplifications:** no enumerable extension, no royalty (ERC-2981)
   support, mint price and supply are immutable after deployment, and there is
   no per-wallet mint limit.
@@ -87,9 +93,12 @@ const nft = await MintableNFT.deploy(
 ```
 erc721-nft-minting/
 ├── contracts/
-│   └── MintableNFT.sol       # minimal ERC-721 + paid mint (self-contained)
+│   ├── MintableNFT.sol         # minimal ERC-721 + paid mint (self-contained)
+│   └── MockERC721Receiver.sol  # test-only receiver (accept / reject modes)
 ├── test/
-│   └── MintableNFT.test.js   # mint / supply cap / transfer / approval cases
+│   └── MintableNFT.test.js   # 20 cases: mint / supply / transfers / approvals
+│                             # + edge cases (unminted ids, operator approvals,
+│                             #   safe-transfer receiver handshake, withdraw)
 ├── hardhat.config.js
 ├── package.json
 └── README.md
