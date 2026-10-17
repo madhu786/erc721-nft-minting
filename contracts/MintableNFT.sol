@@ -91,6 +91,9 @@ contract MintableNFT {
     }
 
     /// @notice Withdraw the contract's ETH balance (mint proceeds) to the owner.
+    /// @dev Only the deployer (`owner`) may call this; reverts with
+    ///      `NotContractOwner` for any other caller. Uses a low-level call
+    ///      and reverts if the transfer fails.
     function withdraw() external onlyOwner {
         (bool ok, ) = owner.call{value: address(this).balance}("");
         require(ok, "withdraw failed");
@@ -98,11 +101,15 @@ contract MintableNFT {
 
     // ----- ERC-721 read functions -----
 
+    /// @notice Count of tokens owned by `account`.
+    /// @dev Reverts with `ZeroAddress` for the zero address, per ERC-721.
     function balanceOf(address account) external view returns (uint256) {
         if (account == address(0)) revert ZeroAddress();
         return _balances[account];
     }
 
+    /// @notice Owner of `tokenId`.
+    /// @dev Reverts with `TokenNotFound` if the token has not been minted.
     function ownerOf(uint256 tokenId) public view returns (address) {
         address tokenOwner = _owners[tokenId];
         if (tokenOwner == address(0)) revert TokenNotFound();
@@ -115,17 +122,25 @@ contract MintableNFT {
         return string(abi.encodePacked(_baseTokenURI, _toString(tokenId)));
     }
 
+    /// @notice Single-token approved address for `tokenId`, or the zero
+    ///         address if none. Reverts with `TokenNotFound` for unminted ids.
     function getApproved(uint256 tokenId) public view returns (address) {
         ownerOf(tokenId); // reverts if the token does not exist
         return _tokenApprovals[tokenId];
     }
 
+    /// @notice Whether `operator` may manage all of `account`'s tokens.
     function isApprovedForAll(address account, address operator) public view returns (bool) {
         return _operatorApprovals[account][operator];
     }
 
     // ----- ERC-721 approvals -----
 
+    /// @notice Approve `approved` to transfer `tokenId` once.
+    /// @dev Caller must be the token owner or an operator of the owner.
+    ///      Reverts with `ApprovalToOwner` if `approved` is the current owner
+    ///      and with `NotAuthorized` if the caller may not approve.
+    ///      The approval is cleared automatically on any transfer.
     function approve(address approved, uint256 tokenId) external {
         address tokenOwner = ownerOf(tokenId);
         if (msg.sender != tokenOwner && !isApprovedForAll(tokenOwner, msg.sender)) {
@@ -137,6 +152,9 @@ contract MintableNFT {
         emit Approval(tokenOwner, approved, tokenId);
     }
 
+    /// @notice Grant or revoke operator approval for all of the caller's tokens.
+    /// @dev Emits `ApprovalForAll`. Operators can transfer and approve on
+    ///      behalf of the owner until revoked.
     function setApprovalForAll(address operator, bool approved) external {
         _operatorApprovals[msg.sender][operator] = approved;
         emit ApprovalForAll(msg.sender, operator, approved);
@@ -144,6 +162,11 @@ contract MintableNFT {
 
     // ----- ERC-721 transfers -----
 
+    /// @notice Transfer `tokenId` from `from` to `to`.
+    /// @dev Caller must be the owner, the per-token approved address, or an
+    ///      operator. Reverts with `NotOwner` if `from` is not the current
+    ///      owner and with `ZeroAddress` if `to` is the zero address.
+    ///      Clears the per-token approval before moving ownership.
     function transferFrom(address from, address to, uint256 tokenId) public {
         address tokenOwner = ownerOf(tokenId);
         if (from != tokenOwner) revert NotOwner();
@@ -165,6 +188,8 @@ contract MintableNFT {
         emit Transfer(from, to, tokenId);
     }
 
+    /// @notice Transfer `tokenId` and, if `to` is a contract, require it to
+    ///         return the ERC-721 receiver magic value (see the 4-arg overload).
     function safeTransferFrom(address from, address to, uint256 tokenId) external {
         safeTransferFrom(from, to, tokenId, "");
     }
@@ -186,6 +211,8 @@ contract MintableNFT {
 
     // ----- ERC-165 -----
 
+    /// @notice ERC-165 interface detection: ERC-721 (0x80ac58cd), ERC-721
+    ///         metadata (0x5b5e139f), and ERC-165 itself (0x01ffc9a7).
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
         return
             interfaceId == 0x80ac58cd || // ERC-721
