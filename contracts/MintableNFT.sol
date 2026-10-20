@@ -13,10 +13,11 @@ interface IERC721Receiver {
 
 /// @title MintableNFT
 /// @notice A minimal, self-contained ERC-721 implementation (no external
-///         imports) with a paid public mint, a fixed max supply, and a
-///         base-URI tokenURI scheme. Written as a compact reference for how
-///         the ERC-721 standard fits together: ownership and balances,
-///         approvals, transfers, and ERC-165 interface detection.
+///         imports) with a paid public mint, a fixed max supply, a
+///         base-URI tokenURI scheme, and ERC-2981 royalty reporting.
+///         Written as a compact reference for how the ERC-721 standard
+///         fits together: ownership and balances, approvals, transfers,
+///         ERC-165 interface detection, and standardised royalties.
 contract MintableNFT {
     // ----- Collection metadata -----
     string public name;
@@ -28,6 +29,14 @@ contract MintableNFT {
     address public owner;
     uint256 private _nextTokenId; // token ids start at 0
 
+    // ----- ERC-2981 royalties -----
+    /// @notice Address that receives royalties on secondary sales.
+    /// @dev Defaults to the contract owner; see `setRoyaltyInfo`.
+    address public royaltyReceiver;
+    /// @notice Royalty fee in basis points (1 bps = 0.01%, 10_000 = 100%).
+    /// @dev Defaults to 0 (no royalty) until the owner configures one.
+    uint256 public royaltyFeeBps;
+
     // ----- ERC-721 state -----
     mapping(uint256 => address) private _owners;
     mapping(address => uint256) private _balances;
@@ -38,6 +47,7 @@ contract MintableNFT {
     event Transfer(address indexed from, address indexed to, uint256 indexed tokenId);
     event Approval(address indexed owner, address indexed approved, uint256 indexed tokenId);
     event ApprovalForAll(address indexed owner, address indexed operator, bool approved);
+    event RoyaltyInfoUpdated(address indexed receiver, uint256 feeBps);
 
     error NotOwner();
     error ZeroAddress();
@@ -48,6 +58,7 @@ contract MintableNFT {
     error WrongPrice();
     error NotContractOwner();
     error UnsafeRecipient();
+    error InvalidRoyalty();
 
     modifier onlyOwner() {
         if (msg.sender != owner) revert NotContractOwner();
@@ -67,6 +78,7 @@ contract MintableNFT {
         mintPrice = mintPrice_;
         _baseTokenURI = baseURI_;
         owner = msg.sender;
+        royaltyReceiver = msg.sender;
     }
 
     // ----- Minting -----
@@ -209,14 +221,54 @@ contract MintableNFT {
         }
     }
 
+    // ----- ERC-2981 royalties -----
+
+    /// @notice Configure the default royalty for every token in the collection.
+    /// @dev Only the contract owner may call this. `feeBps` is in basis
+    ///      points and must not exceed 10_000 (100%). A non-zero fee
+    ///      requires a non-zero `receiver`; setting `feeBps` to 0 disables
+    ///      royalties regardless of the receiver. This contract only
+    ///      *reports* royalties via `royaltyInfo` — marketplaces decide
+    ///      whether to honour them, as ERC-2981 intends.
+    /// @param receiver Address that should receive royalty payments.
+    /// @param feeBps Royalty fee in basis points (e.g. 500 = 5%).
+    function setRoyaltyInfo(address receiver, uint256 feeBps) external onlyOwner {
+        if (feeBps > 10_000) revert InvalidRoyalty();
+        if (feeBps > 0 && receiver == address(0)) revert ZeroAddress();
+        royaltyReceiver = receiver;
+        royaltyFeeBps = feeBps;
+        emit RoyaltyInfoUpdated(receiver, feeBps);
+    }
+
+    /// @notice Royalty information for a sale of `tokenId` at `salePrice`.
+    /// @dev Implements ERC-2981. Reverts with `TokenNotFound` for an
+    ///      unminted id, consistent with `tokenURI` and `getApproved`.
+    ///      The amount is `salePrice * royaltyFeeBps / 10_000`, rounded
+    ///      down by integer division.
+    /// @param tokenId Token being sold; must have been minted.
+    /// @param salePrice Sale price the royalty is calculated from, in wei
+    ///        (or the sale currency's smallest unit).
+    /// @return receiver Address that should receive the royalty payment.
+    /// @return royaltyAmount Amount owed to `receiver` for this sale.
+    function royaltyInfo(
+        uint256 tokenId,
+        uint256 salePrice
+    ) external view returns (address receiver, uint256 royaltyAmount) {
+        ownerOf(tokenId); // reverts if the token does not exist
+        receiver = royaltyReceiver;
+        royaltyAmount = (salePrice * royaltyFeeBps) / 10_000;
+    }
+
     // ----- ERC-165 -----
 
     /// @notice ERC-165 interface detection: ERC-721 (0x80ac58cd), ERC-721
-    ///         metadata (0x5b5e139f), and ERC-165 itself (0x01ffc9a7).
+    ///         metadata (0x5b5e139f), ERC-2981 (0x2a55205a), and ERC-165
+    ///         itself (0x01ffc9a7).
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
         return
             interfaceId == 0x80ac58cd || // ERC-721
             interfaceId == 0x5b5e139f || // ERC-721 metadata
+            interfaceId == 0x2a55205a || // ERC-2981 royalties
             interfaceId == 0x01ffc9a7; // ERC-165
     }
 
