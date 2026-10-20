@@ -4,10 +4,10 @@
 ![Solidity](https://img.shields.io/badge/Solidity-0.8.20-363636?logo=solidity) ![Hardhat](https://img.shields.io/badge/Hardhat-2.x-666666?logo=hardhat) ![Ethers.js](https://img.shields.io/badge/Ethers.js-v6-3C3C3D) ![Node.js](https://img.shields.io/badge/Node.js-20-339933?logo=nodedotjs)
 
 A **minimal ERC-721 implementation written from scratch** in Solidity — no
-OpenZeppelin imports — with a paid public mint, a fixed max supply, and a
-Hardhat test suite. It is a portfolio implementation built to show how the
-ERC-721 standard actually fits together under the hood; it is not a production
-deployment.
+OpenZeppelin imports — with a paid public mint, a fixed max supply,
+ERC-2981 royalty reporting, and a Hardhat test suite. It is a portfolio
+implementation built to show how the ERC-721 standard actually fits together
+under the hood; it is not a production deployment.
 
 ## What it does
 
@@ -19,7 +19,10 @@ deployment.
   approvals, `transferFrom`, `safeTransferFrom`, and `tokenURI` built from a
   base URI.
 - ERC-165 `supportsInterface` so marketplaces and wallets recognize the
-  contract as ERC-721 (+ metadata extension).
+  contract as ERC-721 (+ metadata extension and ERC-2981).
+- ERC-2981 royalties: the owner configures a collection-wide royalty
+  (`setRoyaltyInfo`, fee in basis points); marketplaces query
+  `royaltyInfo(tokenId, salePrice)` to learn who to pay and how much.
 - The contract owner can withdraw accumulated mint proceeds.
 
 ## Features
@@ -29,8 +32,9 @@ deployment.
 - Exact-price minting (`WrongPrice` on under/overpayment)
 - `safeTransferFrom` performs the ERC-721 receiver check on contract recipients
 - Per-token approvals cleared automatically on transfer
+- ERC-2981 `royaltyInfo` with an owner-set fee (basis points, capped at 100%)
 - Custom errors throughout; standard `Transfer` / `Approval` /
-  `ApprovalForAll` events
+  `ApprovalForAll` events, plus `RoyaltyInfoUpdated`
 
 ## Design notes
 
@@ -46,15 +50,26 @@ deployment.
   demonstration exercise: it makes the approval checks, the receiver handshake
   in `safeTransferFrom`, and the ERC-165 interface IDs explicit instead of
   inherited magic.
+- **Royalties (ERC-2981)** are collection-wide, not per-token: one receiver
+  and one fee (basis points) apply to every token, which matches how most
+  single-collection drops are configured. `royaltyInfo` reverts for an
+  unminted id (consistent with `tokenURI`), computes
+  `salePrice * feeBps / 10_000` with integer-division rounding down, and
+  only *reports* the royalty — ERC-2981 is a signalling standard, so
+  honouring it is the marketplace's choice, not something a contract can
+  enforce. The fee defaults to 0 with the owner as receiver, so royalties
+  are opt-in and can be disabled again by setting the fee back to 0.
 - **Test coverage** includes the edge cases a reviewer checks first:
   `ownerOf` / `tokenURI` / `getApproved` reverting on unminted ids, operator
   (`setApprovalForAll`) transfers, per-token approvals being cleared on
   transfer, the `safeTransferFrom` receiver handshake against both an
-  accepting and a rejecting contract (`MockERC721Receiver`), and withdraw
-  being restricted to the contract owner.
-- **Known simplifications:** no enumerable extension, no royalty (ERC-2981)
-  support, mint price and supply are immutable after deployment, and there is
-  no per-wallet mint limit.
+  accepting and a rejecting contract (`MockERC721Receiver`), withdraw
+  being restricted to the contract owner, and the ERC-2981 surface
+  (defaults, fee maths and rounding, disable path, >100% and zero-receiver
+  validation, owner-only configuration, ERC-165 id `0x2a55205a`).
+- **Known simplifications:** no enumerable extension, mint price and supply
+  are immutable after deployment, royalties are collection-wide rather than
+  per-token, and there is no per-wallet mint limit.
 
 ## Tech stack
 
@@ -96,9 +111,10 @@ erc721-nft-minting/
 │   ├── MintableNFT.sol         # minimal ERC-721 + paid mint (self-contained)
 │   └── MockERC721Receiver.sol  # test-only receiver (accept / reject modes)
 ├── test/
-│   └── MintableNFT.test.js   # 20 cases: mint / supply / transfers / approvals
+│   └── MintableNFT.test.js   # 27 cases: mint / supply / transfers / approvals
 │                             # + edge cases (unminted ids, operator approvals,
 │                             #   safe-transfer receiver handshake, withdraw)
+│                             # + ERC-2981 royalties (maths, validation, ERC-165)
 ├── hardhat.config.js
 ├── package.json
 └── README.md
@@ -107,7 +123,7 @@ erc721-nft-minting/
 ## Possible extensions
 
 - Reveal mechanics and per-wallet mint limits
-- ERC-2981 royalties and OpenZeppelin-based production variant
+- Per-token royalty overrides and an OpenZeppelin-based production variant
 - A React + Ethers.js minting page with wallet connect and live supply counter
 
 ## License
