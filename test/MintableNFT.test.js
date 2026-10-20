@@ -201,3 +201,78 @@ describe("MintableNFT — edge cases", function () {
     expect(await nft.supportsInterface("0x01ffc9a7")).to.equal(true);
   });
 });
+
+describe("MintableNFT — ERC-2981 royalties", function () {
+  let nft;
+  let owner, alice, bob;
+
+  async function deploy(maxSupply = 10) {
+    const MintableNFT = await ethers.getContractFactory("MintableNFT");
+    return MintableNFT.deploy("Portfolio Pets", "PPET", maxSupply, PRICE, BASE_URI);
+  }
+
+  beforeEach(async function () {
+    [owner, alice, bob] = await ethers.getSigners();
+    nft = await deploy();
+    await nft.connect(alice).mint({ value: PRICE });
+  });
+
+  it("defaults to the owner as receiver with a zero fee", async function () {
+    expect(await nft.royaltyReceiver()).to.equal(owner.address);
+    expect(await nft.royaltyFeeBps()).to.equal(0);
+    const [receiver, amount] = await nft.royaltyInfo(0, ethers.parseEther("1"));
+    expect(receiver).to.equal(owner.address);
+    expect(amount).to.equal(0);
+  });
+
+  it("reports ERC-2981 via ERC-165", async function () {
+    expect(await nft.supportsInterface("0x2a55205a")).to.equal(true);
+  });
+
+  it("calculates royaltyInfo from the configured fee", async function () {
+    await nft.connect(owner).setRoyaltyInfo(bob.address, 500); // 5%
+    const salePrice = ethers.parseEther("2");
+    const [receiver, amount] = await nft.royaltyInfo(0, salePrice);
+    expect(receiver).to.equal(bob.address);
+    expect(amount).to.equal(ethers.parseEther("0.1")); // 5% of 2 ETH
+    // Rounding: an odd wei amount rounds down.
+    const [, oddAmount] = await nft.royaltyInfo(0, 101n);
+    expect(oddAmount).to.equal(5n); // floor(101 * 500 / 10000)
+    // Zero sale price yields a zero royalty.
+    const [, zeroAmount] = await nft.royaltyInfo(0, 0);
+    expect(zeroAmount).to.equal(0);
+  });
+
+  it("emits RoyaltyInfoUpdated and lets the owner disable royalties", async function () {
+    await expect(nft.connect(owner).setRoyaltyInfo(bob.address, 250))
+      .to.emit(nft, "RoyaltyInfoUpdated")
+      .withArgs(bob.address, 250);
+    await nft.connect(owner).setRoyaltyInfo(bob.address, 0);
+    const [, amount] = await nft.royaltyInfo(0, ethers.parseEther("1"));
+    expect(amount).to.equal(0);
+  });
+
+  it("reverts royaltyInfo for an unminted token", async function () {
+    await expect(nft.royaltyInfo(99, ethers.parseEther("1")))
+      .to.be.revertedWithCustomError(nft, "TokenNotFound");
+  });
+
+  it("rejects a fee above 100% and a zero receiver with a non-zero fee", async function () {
+    await expect(
+      nft.connect(owner).setRoyaltyInfo(bob.address, 10_001)
+    ).to.be.revertedWithCustomError(nft, "InvalidRoyalty");
+    await expect(
+      nft.connect(owner).setRoyaltyInfo(ethers.ZeroAddress, 500)
+    ).to.be.revertedWithCustomError(nft, "ZeroAddress");
+    // A zero receiver is allowed when the fee is zero (royalties off).
+    await expect(nft.connect(owner).setRoyaltyInfo(ethers.ZeroAddress, 0))
+      .to.emit(nft, "RoyaltyInfoUpdated")
+      .withArgs(ethers.ZeroAddress, 0);
+  });
+
+  it("restricts setRoyaltyInfo to the contract owner", async function () {
+    await expect(
+      nft.connect(alice).setRoyaltyInfo(alice.address, 500)
+    ).to.be.revertedWithCustomError(nft, "NotContractOwner");
+  });
+});
