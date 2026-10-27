@@ -352,3 +352,73 @@ describe("MintableNFT — supply, multi-digit URIs and operator approvals", func
     expect(await nft.ownerOf(1)).to.equal(await receiver.getAddress());
   });
 });
+
+describe("MintableNFT — burning", function () {
+  let nft;
+  let owner, alice, bob, charlie;
+
+  async function deploy(maxSupply = 10) {
+    const MintableNFT = await ethers.getContractFactory("MintableNFT");
+    return MintableNFT.deploy("Portfolio Pets", "PPET", maxSupply, PRICE, BASE_URI);
+  }
+
+  beforeEach(async function () {
+    [owner, alice, bob, charlie] = await ethers.getSigners();
+    nft = await deploy();
+  });
+
+  it("lets the owner burn and emits Transfer to the zero address", async function () {
+    await nft.connect(alice).mint({ value: PRICE });
+    await expect(nft.connect(alice).burn(0))
+      .to.emit(nft, "Transfer")
+      .withArgs(alice.address, ethers.ZeroAddress, 0);
+
+    expect(await nft.balanceOf(alice.address)).to.equal(0);
+    await expect(nft.ownerOf(0)).to.be.revertedWithCustomError(nft, "TokenNotFound");
+    await expect(nft.tokenURI(0)).to.be.revertedWithCustomError(nft, "TokenNotFound");
+    await expect(nft.getApproved(0)).to.be.revertedWithCustomError(nft, "TokenNotFound");
+  });
+
+  it("lets an approved account and an operator burn", async function () {
+    await nft.connect(alice).mint({ value: PRICE });
+    await nft.connect(alice).mint({ value: PRICE });
+    await nft.connect(alice).approve(bob.address, 0);
+    await nft.connect(bob).burn(0);
+    expect(await nft.balanceOf(alice.address)).to.equal(1);
+
+    await nft.connect(alice).setApprovalForAll(bob.address, true);
+    await nft.connect(bob).burn(1);
+    expect(await nft.balanceOf(alice.address)).to.equal(0);
+  });
+
+  it("blocks strangers from burning and reverts for unminted ids", async function () {
+    await nft.connect(alice).mint({ value: PRICE });
+    await expect(
+      nft.connect(bob).burn(0)
+    ).to.be.revertedWithCustomError(nft, "NotAuthorized");
+    await expect(
+      nft.connect(alice).burn(99)
+    ).to.be.revertedWithCustomError(nft, "TokenNotFound");
+  });
+
+  it("clears the per-token approval on burn and never reuses the id", async function () {
+    await nft.connect(alice).mint({ value: PRICE });
+    await nft.connect(alice).approve(bob.address, 0);
+    await nft.connect(alice).burn(0);
+    // The next mint takes id 1, not the burned id 0.
+    await nft.connect(alice).mint({ value: PRICE });
+    expect(await nft.ownerOf(1)).to.equal(alice.address);
+    await expect(nft.ownerOf(0)).to.be.revertedWithCustomError(nft, "TokenNotFound");
+    // totalSupply counts mints, so it still reports 2 after one burn.
+    expect(await nft.totalSupply()).to.equal(2);
+  });
+
+  it("makes royaltyInfo revert for a burned token", async function () {
+    await nft.connect(alice).mint({ value: PRICE });
+    await nft.connect(owner).setRoyaltyInfo(owner.address, 500);
+    await nft.connect(alice).burn(0);
+    await expect(
+      nft.royaltyInfo(0, PRICE)
+    ).to.be.revertedWithCustomError(nft, "TokenNotFound");
+  });
+});
