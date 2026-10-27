@@ -18,7 +18,8 @@ interface IERC721Receiver {
 /// @title MintableNFT
 /// @notice A minimal, self-contained ERC-721 implementation (no external
 ///         imports) with a paid public mint, a fixed max supply, a
-///         base-URI tokenURI scheme, and ERC-2981 royalty reporting.
+///         base-URI tokenURI scheme, ERC-2981 royalty reporting, and
+///         owner/approved burning.
 ///         Written as a compact reference for how the ERC-721 standard
 ///         fits together: ownership and balances, approvals, transfers,
 ///         ERC-165 interface detection, and standardised royalties.
@@ -106,8 +107,37 @@ contract MintableNFT {
     }
 
     /// @notice Total tokens minted so far.
+    /// @dev This counts mints, not circulating tokens: burning a token
+    ///      removes its ownership but does not reuse its id or lower
+    ///      this counter, so ids stay unique and monotonic.
     function totalSupply() external view returns (uint256) {
         return _nextTokenId;
+    }
+
+    /// @notice Burn `tokenId`, permanently removing it from circulation.
+    /// @dev Caller must be the token owner, the per-token approved
+    ///      address, or an operator of the owner — the same authorisation
+    ///      as `transferFrom`. Clears the per-token approval, drops the
+    ///      owner's balance, and emits `Transfer` to the zero address,
+    ///      the standard burn signal. The id is never reused, and
+    ///      `totalSupply` (a mint counter) is unchanged, so `ownerOf`,
+    ///      `tokenURI`, `getApproved` and `royaltyInfo` all revert with
+    ///      `TokenNotFound` for a burned id, exactly as for an unminted one.
+    function burn(uint256 tokenId) external {
+        address tokenOwner = ownerOf(tokenId);
+        if (
+            msg.sender != tokenOwner &&
+            msg.sender != _tokenApprovals[tokenId] &&
+            !isApprovedForAll(tokenOwner, msg.sender)
+        ) {
+            revert NotAuthorized();
+        }
+
+        delete _tokenApprovals[tokenId];
+        _balances[tokenOwner] -= 1;
+        delete _owners[tokenId];
+
+        emit Transfer(tokenOwner, address(0), tokenId);
     }
 
     /// @notice Withdraw the contract's ETH balance (mint proceeds) to the owner.
