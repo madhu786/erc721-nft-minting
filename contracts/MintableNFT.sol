@@ -3,6 +3,10 @@ pragma solidity ^0.8.20;
 
 /// @notice ERC-721 receiver interface (for safe transfers).
 interface IERC721Receiver {
+    /// @notice Called by `safeTransferFrom` on the recipient contract.
+    /// @dev Must return `IERC721Receiver.onERC721Received.selector` to
+    ///      accept the token; any other return value (or a revert) makes
+    ///      the whole transfer revert, so ownership rolls back.
     function onERC721Received(
         address operator,
         address from,
@@ -65,6 +69,10 @@ contract MintableNFT {
         _;
     }
 
+    /// @notice Deploy a collection with a fixed supply cap and mint price.
+    /// @dev `mintPrice` and `maxSupply` are immutable after deployment;
+    ///      `royaltyReceiver` starts as the deployer with a 0 fee, so
+    ///      royalties are opt-in via `setRoyaltyInfo`.
     constructor(
         string memory name_,
         string memory symbol_,
@@ -206,6 +214,11 @@ contract MintableNFT {
         safeTransferFrom(from, to, tokenId, "");
     }
 
+    /// @notice Transfer `tokenId` with arbitrary `data` forwarded to the
+    ///         recipient's `onERC721Received` handler (see the 3-arg
+    ///         overload, which passes empty data). The receiver check
+    ///         runs after the ownership move, so a rejecting recipient
+    ///         reverts the whole transfer, including the balance updates.
     function safeTransferFrom(
         address from,
         address to,
@@ -274,6 +287,9 @@ contract MintableNFT {
 
     // ----- Helpers -----
 
+    /// @notice Decimal rendering of `value` (no leading zeros), used to
+    ///         build `tokenURI` as `baseURI + tokenId` for multi-digit ids
+    ///         as well as single-digit ones.
     function _toString(uint256 value) internal pure returns (string memory) {
         if (value == 0) return "0";
         uint256 temp = value;
