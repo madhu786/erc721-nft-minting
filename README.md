@@ -18,6 +18,8 @@ under the hood; it is not a production deployment.
 - Full ERC-721 surface: ownership, balances, single-token and operator
   approvals, `transferFrom`, `safeTransferFrom`, and `tokenURI` built from a
   base URI.
+- Burning: the token owner, its approved account, or an operator can burn a
+  token, emitting `Transfer` to the zero address; burned ids are never reused.
 - ERC-165 `supportsInterface` so marketplaces and wallets recognize the
   contract as ERC-721 (+ metadata extension and ERC-2981).
 - ERC-2981 royalties: the owner configures a collection-wide royalty
@@ -31,7 +33,8 @@ under the hood; it is not a production deployment.
 - Sequential token IDs starting at 0, with a hard supply cap (`SoldOut`)
 - Exact-price minting (`WrongPrice` on under/overpayment)
 - `safeTransferFrom` performs the ERC-721 receiver check on contract recipients
-- Per-token approvals cleared automatically on transfer
+- Per-token approvals cleared automatically on transfer and on burn
+- `burn` for the owner, approved account, or operator, with burned ids never reused
 - ERC-2981 `royaltyInfo` with an owner-set fee (basis points, capped at 100%)
 - Custom errors throughout; standard `Transfer` / `Approval` /
   `ApprovalForAll` events, plus `RoyaltyInfoUpdated`
@@ -59,6 +62,12 @@ under the hood; it is not a production deployment.
   honouring it is the marketplace's choice, not something a contract can
   enforce. The fee defaults to 0 with the owner as receiver, so royalties
   are opt-in and can be disabled again by setting the fee back to 0.
+- **Burning** uses the same authorisation as `transferFrom` (owner, per-token
+  approved account, or operator), clears the per-token approval, and drops the
+  owner's balance. A burned id behaves exactly like an unminted one afterwards
+  (`ownerOf`, `tokenURI`, `getApproved`, and `royaltyInfo` all revert with
+  `TokenNotFound`), and the next mint takes a fresh id — ids are never reused.
+  `totalSupply` counts mints, so it does not drop when a token is burned.
 - **Test coverage** includes the edge cases a reviewer checks first:
   `ownerOf` / `tokenURI` / `getApproved` reverting on unminted ids, operator
   (`setApprovalForAll`) transfers, per-token approvals being cleared on
@@ -116,12 +125,14 @@ erc721-nft-minting/
 │   ├── MintableNFT.sol         # minimal ERC-721 + paid mint (self-contained)
 │   └── MockERC721Receiver.sol  # test-only receiver (accept / reject modes)
 ├── test/
-│   └── MintableNFT.test.js   # 33 cases: mint / supply / transfers / approvals
+│   └── MintableNFT.test.js   # 38 cases: mint / supply / transfers / approvals
 │                             # + edge cases (unminted ids, operator approvals,
 │                             #   safe-transfer receiver handshake, withdraw)
 │                             # + ERC-2981 royalties (maths, validation, ERC-165)
 │                             # + supply cap, multi-digit URIs, operator
 │                             #   approvals, 4-arg safeTransferFrom
+│                             # + burning (owner / approved / operator,
+│                             #   approval clearing, id never reused)
 ├── hardhat.config.js
 ├── package.json
 └── README.md
