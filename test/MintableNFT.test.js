@@ -276,3 +276,79 @@ describe("MintableNFT — ERC-2981 royalties", function () {
     ).to.be.revertedWithCustomError(nft, "NotContractOwner");
   });
 });
+
+describe("MintableNFT — supply, multi-digit URIs and operator approvals", function () {
+  let nft;
+  let owner, alice, bob, charlie;
+
+  async function deploy(maxSupply = 12) {
+    const MintableNFT = await ethers.getContractFactory("MintableNFT");
+    return MintableNFT.deploy("Portfolio Pets", "PPET", maxSupply, PRICE, BASE_URI);
+  }
+
+  beforeEach(async function () {
+    [owner, alice, bob, charlie] = await ethers.getSigners();
+    nft = await deploy();
+  });
+
+  it("builds tokenURI for multi-digit token ids, not just single digits", async function () {
+    for (let i = 0; i < 12; i++) {
+      await nft.connect(alice).mint({ value: PRICE });
+    }
+    expect(await nft.tokenURI(9)).to.equal(BASE_URI + "9");
+    expect(await nft.tokenURI(10)).to.equal(BASE_URI + "10");
+    expect(await nft.tokenURI(11)).to.equal(BASE_URI + "11");
+    expect(await nft.totalSupply()).to.equal(12);
+  });
+
+  it("leaves totalSupply at the cap after a failed mint past the cap", async function () {
+    for (let i = 0; i < 12; i++) {
+      await nft.connect(alice).mint({ value: PRICE });
+    }
+    await expect(
+      nft.connect(bob).mint({ value: PRICE })
+    ).to.be.revertedWithCustomError(nft, "SoldOut");
+    expect(await nft.totalSupply()).to.equal(12);
+  });
+
+  it("lets an operator approve a third party on the owner's behalf", async function () {
+    await nft.connect(alice).mint({ value: PRICE });
+    await nft.connect(alice).setApprovalForAll(bob.address, true);
+    await nft.connect(bob).approve(charlie.address, 0);
+    expect(await nft.getApproved(0)).to.equal(charlie.address);
+    await nft.connect(charlie).transferFrom(alice.address, charlie.address, 0);
+    expect(await nft.ownerOf(0)).to.equal(charlie.address);
+  });
+
+  it("blocks a revoked operator from transferring", async function () {
+    await nft.connect(alice).mint({ value: PRICE });
+    await nft.connect(alice).setApprovalForAll(bob.address, true);
+    await nft.connect(alice).setApprovalForAll(bob.address, false);
+    await expect(
+      nft.connect(bob).transferFrom(alice.address, bob.address, 0)
+    ).to.be.revertedWithCustomError(nft, "NotAuthorized");
+  });
+
+  it("clears the per-token approval when the approved account transfers", async function () {
+    await nft.connect(alice).mint({ value: PRICE });
+    await nft.connect(alice).approve(bob.address, 0);
+    await nft.connect(bob).transferFrom(alice.address, bob.address, 0);
+    expect(await nft.ownerOf(0)).to.equal(bob.address);
+    expect(await nft.getApproved(0)).to.equal(ethers.ZeroAddress);
+  });
+
+  it("supports the four-argument safeTransferFrom overload with data", async function () {
+    const Mock = await ethers.getContractFactory("MockERC721Receiver");
+    const receiver = await Mock.deploy();
+    await nft.connect(alice).mint({ value: PRICE });
+    await nft.connect(alice).mint({ value: PRICE });
+    await nft.connect(alice)["safeTransferFrom(address,address,uint256,bytes)"](
+      alice.address, bob.address, 0, "0x1234"
+    );
+    expect(await nft.ownerOf(0)).to.equal(bob.address);
+    await nft.connect(alice)["safeTransferFrom(address,address,uint256,bytes)"](
+      alice.address, await receiver.getAddress(), 1, "0x1234"
+    );
+    expect(await nft.ownerOf(1)).to.equal(await receiver.getAddress());
+  });
+});
