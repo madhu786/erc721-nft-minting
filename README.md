@@ -66,7 +66,12 @@ under the hood; it is not a production deployment.
   accepting and a rejecting contract (`MockERC721Receiver`), withdraw
   being restricted to the contract owner, and the ERC-2981 surface
   (defaults, fee maths and rounding, disable path, >100% and zero-receiver
-  validation, owner-only configuration, ERC-165 id `0x2a55205a`).
+  validation, owner-only configuration, ERC-165 id `0x2a55205a`). A
+  further suite covers multi-digit `tokenURI` ids, `totalSupply` staying
+  at the cap after a failed mint, an operator approving a third party,
+  a revoked operator being blocked, approval clearing when the approved
+  account itself transfers, and the four-argument `safeTransferFrom`
+  overload with data.
 - **Known simplifications:** no enumerable extension, mint price and supply
   are immutable after deployment, royalties are collection-wide rather than
   per-token, and there is no per-wallet mint limit.
@@ -111,10 +116,12 @@ erc721-nft-minting/
 │   ├── MintableNFT.sol         # minimal ERC-721 + paid mint (self-contained)
 │   └── MockERC721Receiver.sol  # test-only receiver (accept / reject modes)
 ├── test/
-│   └── MintableNFT.test.js   # 27 cases: mint / supply / transfers / approvals
+│   └── MintableNFT.test.js   # 33 cases: mint / supply / transfers / approvals
 │                             # + edge cases (unminted ids, operator approvals,
 │                             #   safe-transfer receiver handshake, withdraw)
 │                             # + ERC-2981 royalties (maths, validation, ERC-165)
+│                             # + supply cap, multi-digit URIs, operator
+│                             #   approvals, 4-arg safeTransferFrom
 ├── hardhat.config.js
 ├── package.json
 └── README.md
