@@ -18,7 +18,9 @@ interface IERC721Receiver {
 /// @title MintableNFT
 /// @notice A minimal, self-contained ERC-721 implementation (no external
 ///         imports) with a paid public mint, a fixed max supply, a
-///         base-URI tokenURI scheme, ERC-2981 royalty reporting, and
+    ///         base-URI tokenURI scheme (the base URI is owner-settable, so a
+    ///         collection can be revealed or its metadata folder moved after
+    ///         deployment), ERC-2981 royalty reporting, and
 ///         owner/approved burning.
 ///         Written as a compact reference for how the ERC-721 standard
 ///         fits together: ownership and balances, approvals, transfers,
@@ -53,6 +55,7 @@ contract MintableNFT {
     event Approval(address indexed owner, address indexed approved, uint256 indexed tokenId);
     event ApprovalForAll(address indexed owner, address indexed operator, bool approved);
     event RoyaltyInfoUpdated(address indexed receiver, uint256 feeBps);
+    event BaseURIUpdated(string newBaseURI);
 
     error NotOwner();
     error ZeroAddress();
@@ -73,7 +76,9 @@ contract MintableNFT {
     /// @notice Deploy a collection with a fixed supply cap and mint price.
     /// @dev `mintPrice` and `maxSupply` are immutable after deployment;
     ///      `royaltyReceiver` starts as the deployer with a 0 fee, so
-    ///      royalties are opt-in via `setRoyaltyInfo`.
+    ///      royalties are opt-in via `setRoyaltyInfo`. The base URI is
+    ///      settable after deployment via `setBaseURI`, so a wrong or
+    ///      placeholder base URI is not permanent.
     constructor(
         string memory name_,
         string memory symbol_,
@@ -147,6 +152,21 @@ contract MintableNFT {
     function withdraw() external onlyOwner {
         (bool ok, ) = owner.call{value: address(this).balance}("");
         require(ok, "withdraw failed");
+    }
+
+    /// @notice Point `tokenURI` at a new metadata folder.
+    /// @dev Only the contract owner may call this; reverts with
+    ///      `NotContractOwner` for any other caller. Applies to every
+    ///      token immediately — already-minted ids resolve against the new
+    ///      base, and later mints do too — because `tokenURI` reads the
+    ///      base at call time. This is the reveal hook: deploy with a
+    ///      placeholder base URI, then switch to the real metadata folder
+    ///      once it is published. An empty string is a valid base URI
+    ///      (then `tokenURI` returns just the decimal token id).
+    /// @param newBaseURI_ The new base URI, e.g. "ipfs://<folder>/".
+    function setBaseURI(string memory newBaseURI_) external onlyOwner {
+        _baseTokenURI = newBaseURI_;
+        emit BaseURIUpdated(newBaseURI_);
     }
 
     // ----- ERC-721 read functions -----
