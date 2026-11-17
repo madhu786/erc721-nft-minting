@@ -18,9 +18,9 @@ interface IERC721Receiver {
 /// @title MintableNFT
 /// @notice A minimal, self-contained ERC-721 implementation (no external
 ///         imports) with a paid public mint, a fixed max supply, a
-    ///         base-URI tokenURI scheme (the base URI is owner-settable, so a
-    ///         collection can be revealed or its metadata folder moved after
-    ///         deployment), ERC-2981 royalty reporting, and
+///         base-URI tokenURI scheme (the base URI is owner-settable, so a
+///         collection can be revealed or its metadata folder moved after
+///         deployment), ERC-2981 royalty reporting, and
 ///         owner/approved burning.
 ///         Written as a compact reference for how the ERC-721 standard
 ///         fits together: ownership and balances, approvals, transfers,
